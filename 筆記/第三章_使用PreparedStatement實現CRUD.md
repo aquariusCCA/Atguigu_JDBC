@@ -1,167 +1,169 @@
 # 1. 操作和访问数据库
+> 数据库连接被用于向数据库服务器发送命令和 SQL 语句，并接受数据库服务器返回的结果。其实一个数据库连接就是一个 Socket 连接。
 
-- 数据库连接被用于向数据库服务器发送命令和 SQL 语句，并接受数据库服务器返回的结果。其实一个数据库连接就是一个 Socket 连接。
-- 在 java.sql 包中有 3 个接口分别定义了对数据库的调用的不同方式：
-  - Statement：用于执行静态 SQL 语句并返回它所生成结果的对象。
-  - PrepatedStatement：SQL 语句被预编译并存储在此对象中，可以使用此对象多次高效地执行该语句。
-  - CallableStatement：用于执行 SQL 存储过程
+在 java.sql 包中有 3 个接口分别定义了对数据库的调用的不同方式：
 
-![](images\20210104162609274.png)
+1. **Statement：** 用于执行静态 SQL 语句并返回它所生成结果的对象。
+2. **PrepatedStatement：** SQL 语句被预编译并存储在此对象中，可以使用此对象多次高效地执行该语句。
+3. **CallableStatement：** 用于执行 SQL 存储过程
+
+![](./images/d5cfa2faee79dac3b13879ca62754168.png)
 
 # 2. 使用 Statement 操作数据表的弊端
+> 通过调用 **Connection** 对象的 `createStatement()` 方法创建该对象。该对象用于执行静态的 SQL 语句，并且返 回执行结果。
 
-- 通过调用 Connection 对象的 createStatement() 方法创建该对象。该对象用于执行静态的 SQL 语句，并且返 回执行结果。
-- Statement 接口中定义了下列方法用于执行 SQL 语句：
+- `Statement` 接口中定义了下列方法用于执行 SQL 语句：
   - **int excuteUpdate(String sql)**：执行更新操作 INSERT、UPDATE、DELETE
   - **ResultSet executeQuery(String sql)**：执行查询操作 SELECT
 
-- 但是使用 Statement 操作数据表存在弊端：
-  - 问题一：存在拼串操作，繁琐
-  - 问题二：存在 SQL 注入问题
-  - 问题三 : Statement 不能操作 BLOB 类型
-  - 问题四 : Statement 实现批量插入时，效率较低
-- SQL 注入是利用某些系统没有对用户输入的数据进行充分的检查，而在用户输入数据中注入非法的 SQL 语句段或命令，从而利用系统的 SQL 引擎完成恶意行为的做法。
+## 2.1 但是使用 Statement 操作数据表存在弊端：
+1. 问题一：存在拼串操作，繁琐
+2. 问题二：存在 SQL 注入问题
+3. 问题三 : Statement 不能操作 BLOB 类型
+4. 问题四 : Statement 实现批量插入时，效率较低
 
-- 对于 Java 而言，要防范 SQL 注入，只要用 PreparedStatement (从 Statement 扩展而来) 取代 Statement 就可 以了。
+> **SQL 注入** 是利用某些系统没有对用户输入的数据进行充分的检查，而在用户输入数据中注入非法的 SQL 语句段或命令，从而利用系统的 SQL 引擎完成恶意行为的做法。
+
+- 对于 Java 而言，要防范 SQL 注入，只要用 **PreparedStatement** (从 **Statement** 扩展而来) 取代 **Statement** 就可以了。
+
+### 演示 SQL 注入問題 : 
+
+> **說明: **
+> - 我們明明想要表達的是用戶名必須是 `1' or`  並且密碼是 `=1 or '1' = '1`
+> - 但是這條 SQL 語句傳送到數據庫就會變成是 `user = 1` 或者 ' AND password = '= 1 或者 '1' = '1'
 
 ```java
-// 使用Statement的弊端：需要拼写sql语句，并且存在SQL注入的问题
-@Test
-public void testLogin() throws Exception {
-    Scanner scanner = new Scanner(System.in);
+package Statement;
 
-    System.out.print("请输入用户名：");
-    String user = scanner.nextLine();
-    System.out.print("请输入密码：");
-    String password = scanner.nextLine();
+import java.io.InputStream;
+import java.lang.reflect.Field;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.Properties;
+import java.util.Scanner;
 
-    //SELECT USER, PASSWORD FROM user_table WHERE USER = 'AA' AND PASSWORD = '123456'
-    // 將 'AA' 和 '123456' 做成變數
-    String sql = "SELECT user,password FROM user_table WHERE user = '" + user + "' AND password = '" + password + "'";
-    User returnUser = get(sql, User.class);
+import org.junit.Test;
 
-    if (returnUser != null) {
-        System.out.println("登录成功");
-    } else {
-        System.out.println("用户名不存在或密码错误");
-    }
+public class StatementTest {
+	// 使用Statement的弊端：需要拼写sql语句，并且存在SQL注入的问题
+	@Test
+	public void testLogin() {
+		Scanner scan = new Scanner(System.in);
+
+		System.out.print("用户名：");
+		String userName = scan.nextLine();
+		System.out.print("密   码：");
+		String password = scan.nextLine();
+
+		// SELECT user,password FROM user_table WHERE USER = '1' or ' AND PASSWORD = '='1' or '1' = '1';
+		String sql = "SELECT user, password FROM user_table WHERE USER = '" + userName + "' AND PASSWORD = '" + password
+				+ "'";
+		User user = get(sql, User.class);
+		if (user != null) {
+			System.out.println("登陆成功!");
+		} else {
+			System.out.println("用户名或密码错误！");
+		}
+	}
+
+	// 使用Statement实现对数据表的查询操作
+	public <T> T get(String sql, Class<T> clazz) {
+		T t = null;
+		Connection conn = null;
+		Statement st = null;
+		ResultSet rs = null;
+		try {
+			// 1.加载配置文件
+			InputStream is = StatementTest.class.getClassLoader().getResourceAsStream("jdbc.properties");
+			Properties pros = new Properties();
+			pros.load(is);
+
+			// 2.读取配置信息
+			String user = pros.getProperty("user");
+			String password = pros.getProperty("password");
+			String url = pros.getProperty("url");
+			String driverClass = pros.getProperty("driverClass");
+
+			// 3.加载驱动
+			Class.forName(driverClass);
+			// 4.获取连接
+			conn = DriverManager.getConnection(url, user, password);
+			st = conn.createStatement();
+			rs = st.executeQuery(sql);
+
+			// 获取结果集的元数据
+			ResultSetMetaData rsmd = rs.getMetaData();
+
+			// 获取结果集的列数
+			int columnCount = rsmd.getColumnCount();
+
+			if (rs.next()) {
+				t = clazz.newInstance();
+				for (int i = 0; i < columnCount; i++) {
+					// //1. 获取列的名称
+					// String columnName = rsmd.getColumnName(i+1);
+					// 1. 获取列的别名
+					String columnName = rsmd.getColumnLabel(i + 1);
+
+					// 2. 根据列名获取对应数据表中的数据
+					Object columnVal = rs.getObject(columnName);
+
+					// 3. 将数据表中得到的数据，封装进对象
+					Field field = clazz.getDeclaredField(columnName);
+					field.setAccessible(true);
+					field.set(t, columnVal);
+				}
+				return t;
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		} finally {
+			// 关闭资源 rs
+			if (rs != null) {
+				try {
+					rs.close();
+				} catch (SQLException e) {
+					e.printStackTrace();
+				}
+			}
+			// 关闭资源 st
+			if (st != null) {
+				try {
+					st.close();
+				} catch (SQLException e) {
+					e.printStackTrace();
+				}
+			}
+			// 关闭资源   conn
+			if (conn != null) {
+				try {
+					conn.close();
+				} catch (SQLException e) {
+					e.printStackTrace();
+				}
+			}
+		}
+		return null;
+	}
 }
 ```
 
-**get 方法如下 :**
+### 綜上 :
 
-```java
-public static <T> T get(String sql, Class<T> clazz) throws Exception {
-
-    Connection conn = null;
-
-    Statement statement = null;
-
-    ResultSet resultSet = null;
-
-    try {
-        // 1.加载配置文件
-        InputStream is = StatementTest.class.getClassLoader().getResourceAsStream("jdbc.properties");
-        Properties properties = new Properties();
-        properties.load(is);
-
-        // 2.读取配置信息
-        String user = properties.getProperty("user");
-        String password = properties.getProperty("password");
-        String url = properties.getProperty("url");
-        String driverClass = properties.getProperty("driverClass");
-
-        // 3.加载驱动
-        Class.forName(driverClass);
-
-        // 4.获取连接
-        conn = DriverManager.getConnection(url, user, password);
-
-        statement = conn.createStatement();
-
-        resultSet = statement.executeQuery(sql);
-
-        // 获取结果集的元数据
-        ResultSetMetaData rsmd = resultSet.getMetaData();
-
-        // 获取结果集的列数
-        int columnCount = rsmd.getColumnCount();
-
-        if (resultSet.next()) {  // Driver对象
-            T t = clazz.getDeclaredConstructor().newInstance();
-
-            // 从元数据中获取表格里第一列值
-            for (int i = 0; i < columnCount; i++) {
-
-                // //1. 获取列的名称
-                //                String columnName = rsmd.getColumnName(i + 1);
-
-                // 1. 获取列的别名, 能过第二种方式获取
-                String columnName = rsmd.getColumnLabel(i + 1);
-
-                // 2. 根据列名获取对应数据表中的数据
-                Object columnVal = resultSet.getObject(columnName);
-
-                // 3. 将数据表中得到的数据，封装进对象, 通过反射获取user每个字段 ,并将字段权限设置为true
-                Field field = clazz.getDeclaredField(columnName);
-                field.setAccessible(true);
-                field.set(t, columnVal);
-
-            }
-
-            return t;
-
-        }
-    } catch (Exception e) {
-        e.printStackTrace();
-    } finally {
-        try {
-            if (resultSet != null)
-                resultSet.close();
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
-        }
-        try {
-            if (statement != null)
-
-                statement.close();
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
-        }
-        try {
-            if (conn != null)
-                conn.close();
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    return null;
-}
-```
-
-**演示 SQL 注入問題 :**
-
-![](images\螢幕擷取畫面 2024-04-27 134344.png)
-
-我們明明想要表達的是用戶名必須是 `1' or`  並且密碼是 `=1 or '1' = '1`
-
-但是這條 SQL 語句傳送到數據庫就會變成是 `user = 1` 或者 ' AND password = '= 1 或者 '1' = '1'
-
-![](images\螢幕擷取畫面 2024-04-27 135328.png)
-
-**綜上 :**
-
-![](images\20210104170301268.png)
+![](./images/86025027a437b0e7f464e90a11d5f794.png)
 
 # 3. PreparedStatement的使用
 
 ## 3.1 PreparedStatement 介绍
 
-- 可以通过调用 Connection 对象的 preparedStatement(String sql) 方法获取 PreparedStatement 对象
-- PreparedStatement 接口是 Statement 的子接口，它表示一条预编译过的 SQL 语句
-- PreparedStatement 对象所代表的 SQL 语句中的参数用问号 (?) 来表示，调用 PreparedStatement 对象的setXxx() 方法来设置这些参数
-- setXxx() 方法有两个参数，第一个参数是要设置的 SQL 语句中的参数的索引(从 1 开始)，第二个是设置的 SQL 语句中的参数的值
+- 可以通过调用 **Connection** 对象的 `preparedStatement(String sql)` 方法获取 **PreparedStatement** 对象
+- **PreparedStatement** 接口是 **Statement** 的子接口，它表示 `一条预编译过的 SQL 语句`
+- **PreparedStatement** 对象所代表的 SQL 语句中的参数用问号 (?) 来表示，调用 PreparedStatement 对象的 `setXxx()` 方法来设置这些参数
+- `setXxx()` 方法有两个参数，第一个参数是要设置的 SQL 语句中的参数的索引(从 1 开始)，第二个是设置的 SQL 语句中的参数的值
 
 ## 3.2 PreparedStatement vs Statement
 
@@ -363,12 +365,12 @@ public void testDelete() {
 
 ### 3.4.5 PreparedStatement 實現通用的增刪改操作
 
-- 通用的增刪改操作
-  1. 獲取連接
-  2. 獲取預編譯 sql 語句
-  3. 填充佔位符
-  4. 執行 sql 語句
-  5. 關閉資源
+> **通用的增刪改操作:**
+> 1. 獲取連接
+> 2. 獲取預編譯 sql 語句
+> 3. 填充佔位符
+> 4. 執行 sql 語句
+> 5. 關閉資源
 
 ```java
 package preparedstatement;
@@ -415,8 +417,8 @@ public class PreparedStatementCommonUpdate {
 ```
 
 ## 3.5 使用 PreparedStatement 实现查询操作
-
 - 對於查詢來說會返回結果集，對於 Java來說萬事萬物皆對象，所以這個結果集必須拿一個類來充當。
+
 - ORM 编程思想  （object relational mapping）
   - 一个数据表对应一个 java 类
   - 表中的一条记录对应 java 类的一个对象
@@ -424,7 +426,7 @@ public class PreparedStatementCommonUpdate {
 
 ### 3.5.1 針對 Customer 表的查詢操作
 
-**測試代碼 :**
+#### 測試代碼 :
 
 ```java
 package preparedstatement;
@@ -479,7 +481,7 @@ public class PreparedStatementQueryTest {
 }
 ```
 
-**Customer 類 :**
+#### Customer 類 :
 
 ```java
 package preparedstatement;
@@ -487,12 +489,6 @@ package preparedstatement;
 
 import java.util.Date;
 
-/*
- * ORM编程思想  （object relational mapping）
- * 一个数据表对应一个java类
- * 表中的一条记录对应java类的一个对象
- * 表中的一个字段对应java类的一个属性
- */
 public class Customer {
 
     private int id;
@@ -551,7 +547,7 @@ public class Customer {
 }
 ```
 
-**工具類 :**
+#### 工具類 :
 
 ```java
 package preparedstatement;
@@ -623,7 +619,7 @@ public class JDBCUtils {
 
 ### 3.5.2 針對 Order 表的查詢操作
 
-**測試代碼 :**
+#### 測試代碼:
 
 ```java
 package preparedstatement;
@@ -874,19 +870,18 @@ public class CustomerForQuery {
 ```
 
 ### 3.5.4 針對 Order 表的通用的查詢操作
+> 我們數據庫設計的欄位名是 `order_id、order_name、order_date`，而我們的 Order 類的屬性名是 `orderId、orderName、orderDate` 現在我們是拿到欄位名加上利用反射機制去創建物件，但是現在就會有欄位名稱和屬性名不一致的問題。
 
-> 我們數據庫設計的欄位名是 order_id、order_name、order_date，而我們的 Order 類的屬性名是 orderId、orderName、orderDate 現在我們是拿到欄位名加上利用反射機制去創建物件，但是現在就會有欄位名稱和屬性名不一致的問題。
-
-- 當列名和屬性名不一致時，可以替列名取別名，此時我們就可以使用 getColumnLabel() 方法获取列的列名：
-  - getColumnName()  → 不推荐使用，获取列的别名
-  - getColumnLabel()  →  推薦，如果沒有別名獲取到的就是列名
+- 當列名和屬性名不一致時，可以替列名取別名，此時我們就可以使用 `getColumnLabel()` 方法获取列的列名：
+  - `getColumnName()`  → 不推荐使用，获取列的别名
+  - `getColumnLabel()`  →  推薦，如果沒有別名獲取到的就是列名
 
 - 针对于表的字段名与类的属性名不相同的情况：
   - 声明 sql 时，使用类的属性名来命名字段的别名
   - 使用 ResultSetMetaData 时，需要使用 getColumnLabel() 来替换 getColumnName() 获取列的别名
   - **如果 sql 中没有给字段其别名，getColumnLabel() 获取的就是列名**
 
-**測試代碼 :**
+#### 測試代碼 :
 
 ```java
 @Test
@@ -960,11 +955,12 @@ public Order orderForQuery(String sql, Object... args) {
 - 当指针指向一行时，可以通过调用 getXxx(int index) 或 getXxx(int columnName) 获取每一列的值。
   - 例如 : getInt(1)、getString("name")
 
-![](images\20210107103842116.png)
+![](./images/588bc448131bc3968ea3881c362fecc6.png)
 
 > 注意：Java与数据库交互涉及到的相关Java API中的索引都从1开始。
 
 ## 4.2 ResultSetMetaData
+![](./images/c0ad0312cbbe8bacf431d8cb3af453f9.png)
 
 - 可用于获取关于 ResultSet 对象中列的类型和属性信息的对象
 - `ResultSetMetaData meta = rs.getMetaData();`
@@ -976,17 +972,17 @@ public Order orderForQuery(String sql, Object... args) {
   - isNullable(int column)：指示指定列中的值是否可以为 null
   - isAutoIncrement(int column)：指示是否自动为指定列进行编号，这样这些列仍然是只读的
 
-![](images\20210107104453664.png)
 
 > 针对于表的字段名与类的属性名不相同的情况 :
 >
 > 1. 必须在声明 sql 时，使用类的属性名来命名字段的别名。
-> 2. 使用 ResultSetMetaata 时，需要使用getColumnLabel() 来替换 getcolumame() 获取列的别名。
+> 2. 使用 ResultSetMetaata 时，需要使用 `getColumnLabel()` 来替换 `getcolumName()` 获取列的别名。
 >
-> 如果 sql 中没有给字段其名 getColumnLabel() 获取的就是列名
+> 如果 sql 中没有给字段其名 `getColumnLabel()` 获取的就是列名
 
 - 问题 1：得到结果集后，如何知道该结果集中有哪些列 ？ 列名是什么？
-  - 需要使用一个描述 ResultSet 的对象， 即 ResultSetMetaData
+  - 需要使用一个描述 ResultSet 的对象， 即 
+
 - 问题 2：关于 ResultSetMetaData
   - 如何获取 ResultSetMetaData： 调用 ResultSet 的 getMetaData() 方法即可
   - 获取 ResultSet 中有多少列：调用 ResultSetMetaData 的 getColumnCount() 方法
@@ -1000,17 +996,18 @@ public Order orderForQuery(String sql, Object... args) {
 
 # 6. JDBC API小结
 
-- 两种思想
-  - 面向接口编程的思想
-  - ORM思想(object relational mapping)
+### 两种思想
+1. 面向接口编程的思想
+
+2. ORM思想(object relational mapping)
     - 一个数据表对应一个 java 类
     - 表中的一条记录对应 java 类的一个对象
     - 表中的一个字段对应 java 类的一个属性
+    > sql 是需要结合列名和表的属性名来写。注意起别名。
 
-> sql 是需要结合列名和表的属性名来写。注意起别名。
-
-- 两种技术
-  - JDBC 结果集的元数据：ResultSetMetaData
+### 两种技术
+- JDBC 结果集的元数据：ResultSetMetaData
     - 获取列数：getColumnCount() 
     - 获取列的别名：getColumnLabel()
-  - 通过反射，创建指定类的对象，获取指定的属性并赋值。
+
+- 通过反射，创建指定类的对象，获取指定的属性并赋值。
