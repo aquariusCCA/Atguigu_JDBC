@@ -452,3 +452,349 @@ public void testResultSetHandler() {
     }
 }
 ```
+
+# 3. 升級以後的 Dao 及相關類的測試
+## BaseDao
+```java
+package apacheDBUtils;
+
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.util.List;
+
+import org.apache.commons.dbutils.QueryRunner;
+import org.apache.commons.dbutils.handlers.BeanHandler;
+import org.apache.commons.dbutils.handlers.BeanListHandler;
+import org.apache.commons.dbutils.handlers.ScalarHandler;
+
+/**
+ * BaseDAO: 封装针对于数据表的通用的操作 (Apache-DBUtils版本)
+ */
+public abstract class BaseDAO<T> {
+
+    private Class<T> clazz = null;
+    private QueryRunner queryRunner = new QueryRunner();
+
+    {
+        // 获取当前BaseDAO的子类继承的父类的泛型
+        Type genericSuperclass = this.getClass().getGenericSuperclass();
+        ParameterizedType paramType = (ParameterizedType) genericSuperclass;
+        Type[] typeArguments = paramType.getActualTypeArguments();
+        clazz = (Class<T>) typeArguments[0];
+    }
+
+    /**
+     * 通用的增删改操作
+     */
+    public int update(Connection conn, String sql, Object... args) {
+        try {
+            return queryRunner.update(conn, sql, args);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * 通用的查询操作，返回一条记录
+     */
+    public T getInstance(Connection conn, String sql, Object... args) {
+        try {
+            return queryRunner.query(conn, sql, new BeanHandler<>(clazz), args);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * 通用的查询操作，返回多条记录
+     */
+    public List<T> getForList(Connection conn, String sql, Object... args) {
+        try {
+            return queryRunner.query(conn, sql, new BeanListHandler<>(clazz), args);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * 用于查询特殊值的通用方法 (單值，比如 count、max、min)
+     */
+    public <E> E getValue(Connection conn, String sql, Object... args) {
+        try {
+            return queryRunner.query(conn, sql, new ScalarHandler<>(), args);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+}
+```
+
+## CustomerDao
+```java
+package apacheDBUtils;
+
+import java.sql.Connection;
+import java.sql.Date;
+import java.util.List;
+
+import bean.Customer;
+
+/*
+ * 此接口用于规范针对于customers表的常用操作
+ */
+public interface CustomerDAO {
+    /**
+     * @param conn
+     * @param cust
+     * @Description 将cust对象添加到数据库中
+     */
+    void insert(Connection conn, Customer cust);
+
+    /**
+     * @param conn
+     * @param id
+     * @Description 针对指定的id，删除表中的一条记录
+     */
+    void deleteById(Connection conn, int id);
+
+    /**
+     * @param conn
+     * @param cust
+     * @Description 针对内存中的cust对象，去修改数据表中指定的记录
+     */
+    void update(Connection conn, Customer cust);
+
+    /**
+     * @param conn
+     * @param id
+     * @Description 针对指定的id查询得到对应的Customer对象
+     */
+    Customer getCustomerById(Connection conn, int id);
+
+    /**
+     * @param conn
+     * @return
+     * @Description 查询表中的所有记录构成的集合
+     */
+    List<Customer> getAll(Connection conn);
+
+    /**
+     * @param conn
+     * @return
+     * @Description 返回数据表中的数据的条目数
+     */
+    Long getCount(Connection conn);
+
+    /**
+     * @param conn
+     * @return
+     * @Description 返回数据表中最大的生日
+     */
+    Date getMaxBirth(Connection conn);
+}
+```
+
+## CustomerDAOImpl
+```java
+package apacheDBUtils;
+
+
+
+import java.sql.Connection;
+import java.sql.Date;
+import java.util.List;
+
+import bean.Customer;
+
+public class CustomerDAOImpl extends BaseDAO<Customer> implements CustomerDAO {
+
+    @Override
+    public void insert(Connection conn, Customer cust) {
+        String sql = "INSERT INTO customers(name, email, birth) VALUES(?, ?, ?)";
+        update(conn, sql, cust.getName(), cust.getEmail(), cust.getBirth());
+    }
+
+    @Override
+    public void deleteById(Connection conn, int id) {
+        String sql = "DELETE FROM customers WHERE id = ?";
+        update(conn, sql, id);
+    }
+
+    @Override
+    public void update(Connection conn, Customer cust) {
+        String sql = "UPDATE customers SET name = ?, email = ?, birth = ? WHERE id = ?";
+        update(conn, sql, cust.getName(), cust.getEmail(), cust.getBirth(), cust.getId());
+    }
+
+    @Override
+    public Customer getCustomerById(Connection conn, int id) {
+        String sql = "SELECT id, name, email, birth FROM customers WHERE id = ?";
+        return getInstance(conn, sql, id);
+    }
+
+    @Override
+    public List<Customer> getAll(Connection conn) {
+        String sql = "SELECT id, name, email, birth FROM customers";
+        return getForList(conn, sql);
+    }
+
+    @Override
+    public Long getCount(Connection conn) {
+        String sql = "SELECT COUNT(*) FROM customers";
+        return getValue(conn, sql);
+    }
+
+    @Override
+    public Date getMaxBirth(Connection conn) {
+        String sql = "SELECT MAX(birth) FROM customers";
+        return getValue(conn, sql);
+    }
+}
+```
+
+## 測試
+```java
+package apacheDBUtils;
+
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.fail;
+
+import java.sql.Connection;
+import java.sql.Date;
+import java.time.LocalDate;
+import java.util.List;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import bean.Customer;
+
+public class CustomerDAOImplTest {
+
+    private CustomerDAO customerDAO;
+    private Connection conn;
+
+    @BeforeEach
+    void setUp() {
+        customerDAO = new CustomerDAOImpl();
+        conn = JDBCUtils.getConnection();
+    }
+
+    @AfterEach
+    void tearDown() {
+        JDBCUtils.closeResource(conn, null, null);
+    }
+
+    @Test
+    void testInsert() {
+        try {
+            conn.setAutoCommit(false);
+
+            Customer cust = new Customer(1, "于小飞", "xiaofei@126.com", new Date(43534646435L));
+            customerDAO.insert(conn, cust);
+
+            conn.commit();
+            System.out.println("Insert success.");
+        } catch (Exception e) {
+            e.printStackTrace();
+            rollback(conn);
+            fail("Insert failed.");
+        }
+    }
+
+    @Test
+    void testUpdate() {
+        try {
+            conn.setAutoCommit(false);
+
+            Customer cust = new Customer(1, "Jerry", "jerry@example.com", Date.valueOf(LocalDate.of(1990, 8, 8)));
+            customerDAO.update(conn, cust);
+
+            conn.commit();
+            System.out.println("Update success.");
+        } catch (Exception e) {
+            e.printStackTrace();
+            rollback(conn);
+            fail("Update failed.");
+        }
+    }
+
+    @Test
+    void testDeleteById() {
+        try {
+            conn.setAutoCommit(false);
+
+            customerDAO.deleteById(conn, 3);
+
+            conn.commit();
+            System.out.println("Delete success.");
+        } catch (Exception e) {
+            e.printStackTrace();
+            rollback(conn);
+            fail("Delete failed.");
+        }
+    }
+
+    @Test
+    void testGetCustomerById() {
+        try {
+            Customer customer = customerDAO.getCustomerById(conn, 1);
+            assertNotNull(customer);
+            System.out.println(customer);
+        } catch (Exception e) {
+            e.printStackTrace();
+            fail("Query by ID failed.");
+        }
+    }
+
+    @Test
+    void testGetAll() {
+        try {
+            List<Customer> list = customerDAO.getAll(conn);
+            assertNotNull(list);
+            list.forEach(System.out::println);
+        } catch (Exception e) {
+            e.printStackTrace();
+            fail("Get all customers failed.");
+        }
+    }
+
+    @Test
+    void testGetCount() {
+        try {
+            Long count = customerDAO.getCount(conn);
+            assertNotNull(count);
+            System.out.println("Total records: " + count);
+        } catch (Exception e) {
+            e.printStackTrace();
+            fail("Get count failed.");
+        }
+    }
+
+    @Test
+    void testGetMaxBirth() {
+        try {
+            Date maxBirth = customerDAO.getMaxBirth(conn);
+            assertNotNull(maxBirth);
+            System.out.println("Max birthday: " + maxBirth);
+        } catch (Exception e) {
+            e.printStackTrace();
+            fail("Get max birth failed.");
+        }
+    }
+
+    private void rollback(Connection conn) {
+        try {
+            if (conn != null) {
+                conn.rollback();
+                System.out.println("Transaction rolled back.");
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
+```
