@@ -2,9 +2,6 @@
 > 通过调用 **Connection** 对象的 `createStatement()` 方法创建该对象。该对象用于执行静态的 SQL 语句，并且返 回执行结果。
 
 - `Statement` 接口中定义了下列方法用于执行 SQL 语句：
-  - **int excuteUpdate(String sql)**：执行更新操作 INSERT、UPDATE、DELETE
-  - **ResultSet executeQuery(String sql)**：执行查询操作 SELECT
-
 ### 🔹 `int executeQuery(String sql)`
 - **用途**：用於執行查詢語句（即 **DQL**，例如 `SELECT`）。
 - **返回值**：回傳一個 `ResultSet` 物件，表示查詢結果集。
@@ -25,6 +22,13 @@ System.out.println("更新了 " + rows + " 行資料");
 ```
 
 ---
+
+### 🔹 `boolean execute(String sql)`
+**執行任意 SQL 語句**  
+- 如果是查詢語句（`SELECT`），返回 `true`
+- 如果是更新語句（`INSERT/UPDATE/DELETE`），返回 `false`
+- 查詢結果可以用 `getResultSet()` 取得
+- 更新結果可以用 `getUpdateCount()` 取得
 
 ### 🔹 `ResultSet`
 - **用途**：代表查詢出來的資料表，類似於一個“虛擬表格”。

@@ -1,7 +1,10 @@
 # 1 PreparedStatement 介绍
 - 可以通过调用 **Connection** 对象的 `preparedStatement(String sql)` 方法获取 **PreparedStatement** 对象
+
 - **PreparedStatement** 接口是 **Statement** 的子接口，它表示 `一条预编译过的 SQL 语句`
+
 - **PreparedStatement** 对象所代表的 SQL 语句中的参数用问号 `?` 来表示，调用 **PreparedStatement** 对象的 `setXxx()` 方法来设置这些参数
+
 - `setXxx()` 方法有两个参数，第一个参数是要设置的 SQL 语句中的参数的索引(从 1 开始)，第二个是设置的 SQL 语句中的参数的值
 
 # 2 PreparedStatement vs Statement
@@ -13,6 +16,20 @@
     - ![1685255826364](images/1685255826364.png)
 - **PreparedStatement** 可以操作 Blob 的数据，而 Statement 做不到。
 - **PreparedStatement** 可以实现更高效的批量操作。
+
+##  `PreparedStatement` 是 `Statement` 的子接口
+- 但 `PreparedStatement` 是 **預編譯 SQL**，SQL 語句是在建立 `PreparedStatement` 的時候就設定好的，**執行時不再傳入 SQL 字串**。
+
+- `PreparedStatement` 中方法特點：
+  - `executeUpdate()`：不需要傳 SQL 字串，直接執行
+  - `executeQuery()`：不需要傳 SQL 字串，直接執行
+  - `execute()`：不需要傳 SQL 字串，直接執行
+
+  ```java
+  PreparedStatement ps = conn.prepareStatement("SELECT * FROM users WHERE id = ?");
+  ps.setInt(1, 1);
+  ResultSet rs = ps.executeQuery(); // 這裡不需要再傳 SQL
+  ```
 
 # 3. ResultSet
 - 查询需要调用 **PreparedStatement** 的 `executeQuery()` 方法，查询结果是一个 **ResultSet** 对象
